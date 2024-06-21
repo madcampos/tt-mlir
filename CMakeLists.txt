@@ -40,8 +40,6 @@ if(MLIR_ENABLE_BINDINGS_PYTHON)
 endif()
 add_subdirectory(test)
 add_subdirectory(tools)
-if(TTMLIR_ENABLE_RUNTIME)
 add_subdirectory(runtime)
-endif()
 
 include(LintTools)
