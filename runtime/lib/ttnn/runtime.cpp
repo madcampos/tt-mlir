@@ -30,7 +30,7 @@ static ::tt::target::Dim2d toFlatbuffer(CoreCoord coreCoord) {
 }
 
 Device wrap(::ttnn::Device &device) {
-  return Device{utils::unsafe_borrow_shared(&device)};
+  return Device(utils::unsafe_borrow_shared(&device));
 }
 
 ::ttnn::Device &unwrap(Device device) {
@@ -179,7 +179,7 @@ Event submit(Device deviceHandle, Binary executableHandle,
   }
   tt::runtime::ttnn::runProgram(device, fbb.programs()->Get(programIndex),
                                 inputs, outputs);
-  return Event{nullptr};
+  return Event(nullptr);
 }
 
 void wait(Event) { throw std::runtime_error("Not implemented"); }
