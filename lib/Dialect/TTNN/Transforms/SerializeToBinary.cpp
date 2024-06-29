@@ -149,6 +149,9 @@ emitTTNNOperation(FlatbufferObjectCache &cache, Operation *op,
     return createOperation(cache, createEltwiseOp(cache, multiplyOp),
                            debugString);
   }
+  if (auto matmulOp = dyn_cast<MatmulOp>(op); matmulOp) {
+    return createOperation(cache, createOp(cache, matmulOp), debugString);
+  }
 
   llvm_unreachable("unhandled op in emitTTNNOperation");
 }
