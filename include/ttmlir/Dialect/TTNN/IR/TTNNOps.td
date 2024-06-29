@@ -49,14 +49,14 @@ def TTNN_ToMemoryConfigOp : TTNN_Op<"to_memory_config", [DestinationStyleOpInter
 }
 
 class TTNN_NamedDPSOp<string mnemonic, list<Trait> traits = []> :
-    TTNN_Op<mnemonic, !listconcat(traits, [DestinationStyleOpInterface, AttrSizedOperandSegments])> {
+    TTNN_Op<mnemonic, !listconcat(traits, [DestinationStyleOpInterface])> {
     let extraClassDeclaration = [{
       MutableOperandRange getDpsInitsMutable() { return getOutputsMutable(); }
     }];
 }
 
 class TTNN_ElementwiseOp<string mnemonic, list<Trait> traits = []> :
-    TTNN_NamedDPSOp<mnemonic, !listconcat(traits, [Elementwise])> {
+    TTNN_NamedDPSOp<mnemonic, !listconcat(traits, [Elementwise, AttrSizedOperandSegments])> {
 
     let arguments = (ins Variadic<AnyRankedTensor>:$inputs,
                          Variadic<AnyRankedTensor>:$outputs);
@@ -84,6 +84,21 @@ def TTNN_MultiplyOp : TTNN_ElementwiseBinaryOp<"multiply"> {
       Eltwise multiply operation.
     }];
 }
+
+// ANCHOR: adding_an_op_matmul_ttnn
+def TTNN_MatmulOp : TTNN_NamedDPSOp<"matmul"> {
+    let arguments = (ins AnyRankedTensor:$a,
+                         AnyRankedTensor:$b,
+                         AnyRankedTensor:$output);
+    let results = (outs AnyRankedTensor:$result);
+
+    let extraClassDeclaration = [{
+      MutableOperandRange getDpsInitsMutable() { return getOutputMutable(); }
+    }];
+
+    let hasVerifier = 1;
+}
+// ANCHOR_END: adding_an_op_matmul_ttnn
 
 def TTNN_FullOp : TTNN_Op<"full"> {
     let summary = "Full op.";

@@ -18,7 +18,7 @@ include "mlir/IR/CommonAttrConstraints.td"
 include "mlir/IR/OpBase.td"
 
 class TTIR_DPSOp<string mnemonic, list<Trait> traits = []> :
-    TTIR_Op<mnemonic, !listconcat(traits, [TTIROpInterface, DestinationStyleOpInterface, AttrSizedOperandSegments])> {
+    TTIR_Op<mnemonic, !listconcat(traits, [TTIROpInterface, DestinationStyleOpInterface])> {
     let extraClassDeclaration = [{
       MutableOperandRange getDpsInitsMutable() { return getOutputsMutable(); }
     }];
@@ -28,7 +28,7 @@ class TTIR_DPSOp<string mnemonic, list<Trait> traits = []> :
 // TTIR top level ops
 //===----------------------------------------------------------------------===//
 
-def TTIR_GenericOp : TTIR_DPSOp<"generic"> {
+def TTIR_GenericOp : TTIR_DPSOp<"generic", [AttrSizedOperandSegments]> {
     let summary = "Generically dispatch work to a grid of cores.";
     let description = [{
       This generic op carries a region that represents the work each core does. The region is
@@ -116,7 +116,7 @@ def TTIR_DeallocOp : TTIR_Op<"dealloc"> {
 //===----------------------------------------------------------------------===//
 
 class TTIR_ElementwiseOp<string mnemonic, list<Trait> traits = []> :
-    TTIR_DPSOp<mnemonic, !listconcat(traits, [Elementwise])> {
+    TTIR_DPSOp<mnemonic, !listconcat(traits, [Elementwise, AttrSizedOperandSegments])> {
 
     let arguments = (ins Variadic<AnyRankedTensor>:$inputs,
                          Variadic<AnyRankedTensor>:$outputs,
@@ -145,6 +145,28 @@ def TTIR_MultiplyOp : TTIR_ElementwiseBinaryOp<"multiply"> {
       Eltwise multiply operation.
     }];
 }
+
+// ANCHOR: adding_an_op_matmul_ttir
+def TTIR_MatmulOp : TTIR_DPSOp<"matmul"> {
+    let summary = "Matrix multiply operation.";
+    let description = [{
+      Matrix multiply operation.
+    }];
+
+    let arguments = (ins AnyRankedTensor:$a,
+                         AnyRankedTensor:$b,
+                         AnyRankedTensor:$output,
+                         TT_OperandConstraintArrayAttr:$operand_constraints);
+
+    let results = (outs AnyRankedTensor:$result);
+
+    let extraClassDeclaration = [{
+      MutableOperandRange getDpsInitsMutable() { return getOutputMutable(); }
+    }];
+
+    let hasVerifier = 1;
+}
+// ANCHOR_END: adding_an_op_matmul_ttir
 
 //===----------------------------------------------------------------------===//
 // TTIR region ops (ops that may appear inside of ttir.generic region)
