@@ -18,10 +18,11 @@ This guide will cover the following steps:
 ## 1. Define the Op in the TTIR frontend dialect
 
 We will start by defining the Op in the TTIR dialect. The TTIR Ops are defined
-in a tablegen file located at `include/ttmlir/Dialect/TTIR/IR/TTIROps.td`. Tablegen is a
-domain-specific language for defining ops/types/attributes in MLIR and LLVM,
-these definitions constitute the dialects *Operation Definition Specification*
-([ODS](https://mlir.llvm.org/docs/DefiningDialects/Operations/)).
+in a tablegen file located at `include/ttmlir/Dialect/TTIR/IR/TTIROps.td`.
+
+> Tablegen is a domain-specific language for defining ops/types/attributes in MLIR and LLVM,
+> these definitions constitute the dialect's *Operation Definition Specification*
+> ([ODS](https://mlir.llvm.org/docs/DefiningDialects/Operations/)).
 
 Here is an example of defining `matmul` in the TTIR dialect:
 
@@ -114,10 +115,17 @@ This means that `runOnOperation` will be called for every `ModuleOp` in the
 graph, usually there is only one `ModuleOp` which serves as the root of the
 graph.
 
-Inside `runOnOperation` we define a rewrite pattern set that can match much more
-complicated patterns than just a single operation, more information on rewrite
-patterns and their capabilities can be found in the [MLIR
-documentation](https://mlir.llvm.org/docs/PatternRewriter/).
+Inside `runOnOperation` is usually where we define a rewrite pattern set that
+can match much more complicated patterns (nested inside of the `ModuleOp`'s
+[regions](https://mlir.llvm.org/docs/LangRef/#regions))
+than just a single operation.
+
+```cpp
+{{#include ../../../lib/Dialect/TTNN/Transforms/Passes.cpp:adding_an_op_matmul_rewrite_pattern_set}}
+```
+
+> More information on rewrite patterns and their capabilities can be found in the [MLIR
+> documentation](https://mlir.llvm.org/docs/PatternRewriter/).
 
 For matmul, we defined a new pattern rewriter that's generic to all binary ops
 with arguments named `a` and `b`:
@@ -145,9 +153,9 @@ subdirectory since we are testing the `ConvertTTIRToTTNN` pass.
 {{#include ../../../test/ttmlir/Dialect/TTNN/simple_matmul.mlir}}
 ```
 
-Unit tests in MLIR are typically written using a tool called `FileCheck`, please refer to
-the llvm [FileCheck documentation](https://llvm.org/docs/CommandGuide/FileCheck.html)
-for a tutorial and more information about the `RUN` and `CHECK` directives.
+> Unit tests in MLIR are typically written using a tool called `FileCheck`, please refer to
+> the llvm [FileCheck documentation](https://llvm.org/docs/CommandGuide/FileCheck.html)
+> for a tutorial and more information about the `RUN` and `CHECK` directives.
 
 A few things to point out specifically regarding tt-mlir dialects:
 
@@ -176,10 +184,51 @@ resulting output:
 
 ## 5. Define flatbuffer schema for the Op
 
+Next we will define the flatbuffer schema for the Op.  The schema must capture
+all tensor inputs, outputs, and attributes of the Op, i.e. everything the
+runtime needs to execute the Op.
+
+#### `include/ttmlir/Target/TTNN/program.fbs`
 ```cpp
 {{#include ../../../include/ttmlir/Target/TTNN/program.fbs:adding_an_op_matmul_fbs}}
 ```
 
+Type `TensorRef`, flatbuffer tables with suffix `Ref` are used to represent live values
+during the runtime, decoupled from the underlying `Desc` suffixes which carry the
+type and attribute information for the object.
+
+We also add this new op to the `union OpType`, which is the variant type for all
+ops.
+
+> More information about writing flatbuffer schemas can be found in the
+> [flatbuffers documentation](https://flatbuffers.dev/flatbuffers_guide_writing_schema.html)
+
 ## 6. Serialize the Op in the flatbuffer format
+
+In the previous section we defined the flatbuffer schema for the `matmul`
+Op, now let's put our new schema definition to use. The schema is used as input
+to a program called `flatc` which generates C++ code (or any language for that
+matter) for serializing and deserializing the schema. This generated code can be
+found in `build/include/ttmlir/Target/TTNN/program_generated.h`.
+
+Let's head over to `lib/Dialect/TTNN/Transforms/SerializeToBinary.cpp` to define
+a `createOp` overloaded function that does the conversion from MLIR to flatbuffer:
+
+```cpp
+{{#include ../../../lib/Dialect/TTNN/Transforms/SerializeToBinary.cpp:adding_an_op_matmul_serialize_to_binary}}
+```
+
+Lots of things are happening here, let's break it down:
+- `FlatbufferObjectCache`: This is a helper class that is used to cache
+  flatbuffer objects that are created during the serialization process.  This
+  is useful for avoiding redundant object creation and for ensuring that
+  objects are only created once and are uniquely stored. **TODO**
+- `getOperandThroughDPSOps`:
+- `CreateMatmulOp`: 
+
+
+```bash
+./build/bin/ttmlir-opt --ttir-layout --ttnn-open-device --convert-ttir-to-ttnn --ttnn-serialize-to-binary="output=out.ttnn" test/ttmlir/Dialect/TTNN/simple_matmul.mlir
+```
 
 ## 7. Add runtime support for the Op
