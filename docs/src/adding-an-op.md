@@ -250,3 +250,16 @@ ttrt read out.ttnn
 ```
 
 ## 7. Add runtime support for the Op
+
+The final step is to add runtime support for the Op by parsing the flatbuffer and
+invoking the TTNN API.
+
+#### `runtime/lib/ttnn/program.cpp`
+```cpp
+{{#include ../../../runtime/lib/ttnn/program.cpp:adding_an_op_matmul_runtime}}
+```
+
+We can test our changes with `ttrt` (don't forget to rebuild `ttrt`):
+```bash
+ttrt run out.ttnn
+```

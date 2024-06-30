@@ -50,16 +50,16 @@ namespace mlir::tt::ttnn {
   if (inputAShape.size() != outputShape.size()) {
     return emitOpError("Input A and B must have the same rank as the output");
   }
-  auto m = inputAShape.size() - 2;
-  auto k = inputAShape.size() - 1;
-  auto n = inputBShape.size() - 1;
-  if (inputAShape[k] != inputBShape[k]) {
+  if (inputAShape[inputAShape.size() - 1] !=
+      inputBShape[inputBShape.size() - 2]) {
     return emitOpError("Input A and B must have matching inner dimensions");
   }
-  if (outputShape[m] != inputAShape[m]) {
+  if (outputShape[outputShape.size() - 2] !=
+      inputAShape[inputAShape.size() - 2]) {
     return emitOpError("Output must have the same number of rows as input A");
   }
-  if (outputShape[n] != inputBShape[n]) {
+  if (outputShape[outputShape.size() - 1] !=
+      inputBShape[inputBShape.size() - 1]) {
     return emitOpError("Output must have the same number of columns as input B");
   }
   return success();
