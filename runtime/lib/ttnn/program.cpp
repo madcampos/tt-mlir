@@ -34,10 +34,25 @@ run(::tt::target::ttnn::ToMemoryConfigOp const *op, ::ttnn::Device &device,
   const auto memoryConfig =
       isL1 ? ::ttnn::L1_MEMORY_CONFIG : ::ttnn::DRAM_MEMORY_CONFIG;
   auto &inputTensor = *liveTensors.at(op->in0()->global_id());
-  auto tilized = ::tt::tt_metal::tensor_impl::to_layout<float>(
-      inputTensor, ::ttnn::TILE_LAYOUT);
-  //::ttnn::to_layout(inputTensor, ::ttnn::TILE_LAYOUT, std::nullopt,
-  //                  std::nullopt, (Device *)nullptr);
+#if 1
+  ::ttnn::Tensor tilized;
+  if (op->out()->desc()->layout()->memory_desc()->data_type() ==
+      ::tt::target::DataType::Float32) {
+    tilized = ::tt::tt_metal::tensor_impl::to_layout<float>(
+        inputTensor, ::ttnn::TILE_LAYOUT);
+  } else if (op->out()->desc()->layout()->memory_desc()->data_type() ==
+             ::tt::target::DataType::BFloat16) {
+    tilized = ::tt::tt_metal::tensor_impl::to_layout<bfloat16>(
+        inputTensor, ::ttnn::TILE_LAYOUT);
+  } else {
+    throw std::runtime_error("Unsupported data type");
+  }
+#else
+  auto unsqueezeTensor = ::ttnn::unsqueeze_to_4D(inputTensor);
+  auto tilized =
+      ::ttnn::to_layout(unsqueezeTensor, ::ttnn::TILE_LAYOUT, std::nullopt,
+                        std::nullopt, (Device *)nullptr);
+#endif
   auto deviceTensor = ::ttnn::to_device(tilized, &device, memoryConfig);
   tensorPool.push_back(deviceTensor);
   // auto [iter, inserted] =
