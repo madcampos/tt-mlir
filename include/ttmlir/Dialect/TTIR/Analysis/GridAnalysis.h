@@ -10,8 +10,12 @@
 namespace mlir::tt::ttir {
 
 struct GridAnalysisResult {
-  int target_rows = 1;
-  int target_columns = 1;
+  int target_rows;
+  int target_columns;
+
+  GridAnalysisResult() : target_rows(1), target_columns(1) {}
+  GridAnalysisResult(int target_rows, int target_columns)
+      : target_rows(target_rows), target_columns(target_columns) {}
 };
 
 struct GridAnalysisInput {

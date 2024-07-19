@@ -45,6 +45,13 @@ public:
     return analysis_result;
   }
 
+  // Load result override.
+  //
+  void loadOverride(const R &result) {
+    analysis_result = result;
+    is_valid = true;
+  }
+
 private:
   // Run the analysis.
   //

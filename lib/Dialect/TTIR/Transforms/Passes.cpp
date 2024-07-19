@@ -742,6 +742,17 @@ public:
         grid_analysis.init(
             GridAnalysisInput(max_grid.getShape()[0], max_grid.getShape()[1]));
 
+        // Lookup overrides based on location information for current operation.
+        //
+        if (op->getLoc().isa<NameLoc>()) {
+          auto loc_str = op->getLoc().cast<NameLoc>().getName().str();
+          if (overrideGridSizes.find(loc_str) != overrideGridSizes.end()) {
+            auto grid_size = overrideGridSizes[loc_str];
+            grid_analysis.loadOverride(
+                GridAnalysisResult(grid_size[0], grid_size[1]));
+          }
+        }
+
         // Run the grid analysis and get the result.
         //
         GridAnalysisResult grid_analysis_result = grid_analysis.getResult();
