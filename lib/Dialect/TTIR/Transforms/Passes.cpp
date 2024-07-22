@@ -22,6 +22,15 @@
 #include "ttmlir/Dialect/TTIR/Analysis/OptimalTargetGridAnalysis.h"
 #include "ttmlir/Dialect/TTIR/Transforms/Passes.h"
 
+#include "ttmlir/Target/Common/system_desc_generated.h"
+#include "flatbuffers/flatbuffers.h"
+
+#include <iostream>
+#include <filesystem>  // Ensure this is included
+#include <fstream>
+#include <cstdio>
+#include <stdio.h>
+
 namespace mlir::tt::ttir {
 #define GEN_PASS_DEF_TTIRGENERIC
 #define GEN_PASS_DEF_TTIRGENERICREGIONOPERANDSTOMEMREF
@@ -29,6 +38,7 @@ namespace mlir::tt::ttir {
 #define GEN_PASS_DEF_TTIRALLOCATE
 #define GEN_PASS_DEF_TTIRGRIDSET
 #define GEN_PASS_DEF_TTIRIMPLICITDEVICE
+#define GEN_PASS_DEF_TTIRLOADSYSTEMDESC
 #include "ttmlir/Dialect/TTIR/Transforms/Passes.h.inc"
 
 class TTIRImplicitDevice
@@ -754,6 +764,80 @@ public:
           func.getContext(), funcType.getInputs(), funcResultTypes);
       func.setType(newFuncType);
     });
+  }
+};
+
+class TTIRLoadSystemDesc : public impl::TTIRLoadSystemDescBase<TTIRLoadSystemDesc> {
+public:
+  using impl::TTIRLoadSystemDescBase<TTIRLoadSystemDesc>::TTIRLoadSystemDescBase;
+  
+  void runOnOperation() final {
+    ModuleOp module = getOperation();
+
+    std::filesystem::path taps_path = path.getValue();
+
+    if (not path.empty()) {
+      // Check if file exists
+      assert(!path.empty() && "cluster desc path must not be empty!");
+      assert(std::filesystem::exists(taps_path) && "provided cluster desc file does not exist!");
+
+      std::ifstream infile;
+      infile.open(taps_path, std::ios::binary | std::ios::in);
+      infile.seekg(0,std::ios::end);
+      int length = infile.tellg();
+      infile.seekg(0,std::ios::beg);
+      char *data = new char[length];
+      infile.read(data, length);
+      infile.close();
+
+      auto system_desc = ::tt::target::GetSystemDescRoot(data);
+      auto another = system_desc->system_desc();
+      //auto chip_coords = another->chip_coords();
+
+      //if (chip_coords) {
+      //  for (size_t i = 0; i < chip_coords->size(); ++i) {
+      //      auto coord = chip_coords->Get(i); // Or use chip_coords[i]
+      //      auto taps_y = ::flatbuffers::EndianScalar(coord->y());
+      //      //std::cout << "coord x: " << coord->x()->c_str() << std::endl;
+      //      std::cout << taps_y << std::endl;
+      //  }
+      auto context = &getContext();
+      auto some_desc_attr = tt::ChipDescAttr::get(
+              context, tt::ArchAttr::get(context, tt::Arch::WormholeB0),
+              tt::GridAttr::get(context, {8, 8}), (1 << 20), 12, (1 << 20), 16,
+              32, another->chip_descs()->Get(0)->noc_dram_address_align_bytes());
+      auto some_module = tt::SystemDescAttr::get(
+      context,
+      {some_desc_attr},
+      {
+          0,
+      },
+      {
+          tt::ChipCapabilityAttr::get(context,
+                                      // NOLINTNEXTLINE
+                                      tt::ChipCapability::PCIE |
+                                          tt::ChipCapability::HostMMIO),
+      },
+      {
+          tt::ChipCoordAttr::get(context, 0, 0, 0, 0),
+      },
+      {});
+
+
+      //auto some_module =  tt::SystemDescAttr::get(
+      //  &getContext(),
+      //  {another->chip_descs()},
+      //  {another->chip_desc_indices()},
+      //  {another->chip_capabilities()},
+      //  {another->chip_coords()},
+      //  {another->chip_channels()});
+
+      module->setAttr(tt::SystemDescAttr::name, some_module);
+      //std::cout << chip_coords->Get(0)->y();
+      //module->setAttr(tt::SystemDescAttr::name, system_desc_attr->get());
+    } else if (not module->hasAttr(tt::SystemDescAttr::name)) {
+      module->setAttr(tt::SystemDescAttr::name, tt::SystemDescAttr::getDefault(&getContext()));
+    }
   }
 };
 
