@@ -180,9 +180,9 @@ def run(args):
                 toDataType(i.dtype),
             )
         )
-
     system_desc, device_ids = ttrt.runtime.get_current_system_desc()
-    device = ttrt.runtime.open_device(device_ids)
+    first_device = [device_ids[0]]
+    device = ttrt.runtime.open_device(first_device)
     ttrt.runtime.submit(device, fbb, 0, inputs, outputs)
     print("outputs:\n", torch_outputs)
     ttrt.runtime.close_device(device)
