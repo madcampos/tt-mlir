@@ -45,7 +45,7 @@ public:
       module->setAttr(
           tt::DeviceAttr::name,
           tt::DeviceAttr::get(&getContext(),
-                              systemDesc.cast<tt::SystemDescAttr>()));
+                              mlir::cast<tt::SystemDescAttr>(systemDesc)));
     }
   }
 
@@ -67,8 +67,7 @@ public:
     }
 
     // Create empty output tensor for destination passing style (DPS)
-    auto outputType =
-        op.getResult().getType().template cast<RankedTensorType>();
+    auto outputType = mlir::cast<RankedTensorType>(op.getResult().getType());
     auto output = rewriter.create<tensor::EmptyOp>(
         op.getLoc(), outputType.getShape(), outputType.getElementType());
     rewriter.replaceOpWithNewOp<TTIROp>(
@@ -172,9 +171,9 @@ public:
     if (operands.empty()) {
       return false;
     }
-    auto rank = operands[0].getType().cast<RankedTensorType>().getRank();
+    auto rank = mlir::cast<RankedTensorType>(operands[0].getType()).getRank();
     for (auto operand : operands) {
-      if (operand.getType().cast<RankedTensorType>().getRank() != rank) {
+      if (mlir::cast<RankedTensorType>(operand.getType()).getRank() != rank) {
         return false;
       }
     }
@@ -186,7 +185,7 @@ public:
                             mlir::OperandRange operands) {
     assert(sameRank(operands) &&
            "For now all operands must have the same rank");
-    auto rank = operands[0].getType().cast<RankedTensorType>().getRank();
+    auto rank = mlir::cast<RankedTensorType>(operands[0].getType()).getRank();
     SmallVector<AffineMap> indexingMaps(operands.size(),
                                         rewriter.getMultiDimIdentityMap(rank));
     SmallVector<Attribute> iteratorTypes(
@@ -200,7 +199,7 @@ public:
                            mlir::OperandRange operands) {
     assert(sameRank(operands) &&
            "For now all operands must have the same rank");
-    auto rank = operands[0].getType().cast<RankedTensorType>().getRank();
+    auto rank = mlir::cast<RankedTensorType>(operands[0].getType()).getRank();
     assert(rank >= 2 && "Matmul requires rank >= 2");
     auto rank_plus_inner_dim = rank + 1;
 
@@ -323,26 +322,22 @@ public:
                                 PatternRewriter &rewriter) const final {
     auto dpsInterface = cast<DestinationStyleOpInterface>(op.getOperation());
     for (auto &operand : op->getOpOperands()) {
-      auto encoding = operand.get()
-                          .getType()
-                          .template cast<RankedTensorType>()
-                          .getEncoding();
+      auto encoding =
+          mlir::cast<RankedTensorType>(operand.get().getType()).getEncoding();
       if (not encoding) {
         return failure(); // Hasn't been type converted yet
       }
 
       auto blockArg = op.getRegion().getArgument(operand.getOperandNumber());
-      if (blockArg.getType().isa<MemRefType>()) {
+      if (mlir::isa<MemRefType>(blockArg.getType())) {
         return failure(); // Already lowered
       }
 
       // Rewire the operand to the layout op
       rewriter.modifyOpInPlace(op, [&]() {
-        auto layout = operand.get()
-                          .getType()
-                          .template cast<RankedTensorType>()
-                          .getEncoding()
-                          .template cast<LayoutAttr>();
+        auto layout = mlir::cast<LayoutAttr>(
+            mlir::cast<RankedTensorType>(operand.get().getType())
+                .getEncoding());
 
         blockArg.setType(layout.getMemref());
 
@@ -380,7 +375,7 @@ public:
 };
 
 inline MemorySpace getMemorySpace(MemRefType memref) {
-  return memref.getMemorySpace().template cast<MemorySpaceAttr>().getValue();
+  return mlir::cast<MemorySpaceAttr>(memref.getMemorySpace()).getValue();
 }
 
 inline MemorySpace getMemorySpace(LayoutAttr layout) {
@@ -389,7 +384,7 @@ inline MemorySpace getMemorySpace(LayoutAttr layout) {
 
 inline MemorySpace getMemorySpace(RankedTensorType ty) {
   assert(ty.getEncoding());
-  auto layout = ty.getEncoding().template cast<LayoutAttr>();
+  auto layout = mlir::cast<LayoutAttr>(ty.getEncoding());
   return getMemorySpace(layout);
 }
 
@@ -480,8 +475,8 @@ public:
 static std::optional<Value>
 createLayoutOp(PatternRewriter &rewriter, Location loc, Value input,
                OperandConstraint operandConstraint) {
-  auto ty = input.getType().cast<RankedTensorType>();
-  auto currLayout = ty.getEncoding().cast<LayoutAttr>();
+  auto ty = mlir::cast<RankedTensorType>(input.getType());
+  auto currLayout = mlir::cast<LayoutAttr>(ty.getEncoding());
   auto currMemorySpace = currLayout.getMemorySpace();
   auto desiredMemorySpace = uppermostMemorySpace(operandConstraint);
   if (currMemorySpace == desiredMemorySpace) {
@@ -513,17 +508,15 @@ public:
     bool modified = false;
     for (auto &operand : op->getOpOperands()) {
       bool isResult = dpsInterface.isDpsInit(&operand);
-      auto encoding = operand.get()
-                          .getType()
-                          .template cast<RankedTensorType>()
-                          .getEncoding();
+      auto encoding =
+          mlir::cast<RankedTensorType>(operand.get().getType()).getEncoding();
       if (not encoding) {
         return failure(); // Hasn't been type converted yet
       }
 
       auto operandConstraint =
-          op.getOperandConstraints()[operand.getOperandNumber()]
-              .template cast<OperandConstraintAttr>()
+          mlir::cast<OperandConstraintAttr>(
+              op.getOperandConstraints()[operand.getOperandNumber()])
               .getValue();
       auto desiredLayout = createLayoutOp(rewriter, op.getLoc(), operand.get(),
                                           operandConstraint);
@@ -641,7 +634,7 @@ inline uint64_t getLayoutSizeBytes(LayoutAttr layout) {
 
 inline uint64_t getTensorSizeBytes(RankedTensorType ty) {
   assert(ty.getEncoding());
-  auto layout = ty.getEncoding().template cast<LayoutAttr>();
+  auto layout = mlir::cast<LayoutAttr>(ty.getEncoding());
   return getLayoutSizeBytes(layout);
 }
 
@@ -711,7 +704,7 @@ public:
           liveness.getLiveness(&func.getBody().front());
       func->walk([&](tensor::EmptyOp empty) {
         auto resultTy =
-            empty.getResult().getType().template cast<RankedTensorType>();
+            mlir::cast<RankedTensorType>(empty.getResult().getType());
         assert(resultTy.getEncoding());
 
         auto [startOp, endOp] =
@@ -752,9 +745,9 @@ public:
     // Get the max grid size from the system description.
     //
     assert(module_op->hasAttr(tt::DeviceAttr::name));
-    GridAttr max_grid = module_op->getAttr(tt::DeviceAttr::name)
-                            .cast<tt::DeviceAttr>()
-                            .getGrid();
+    GridAttr max_grid =
+        mlir::cast<tt::DeviceAttr>(module_op->getAttr(tt::DeviceAttr::name))
+            .getGrid();
     module_op->walk([&](func::FuncOp func) {
       SmallVector<Type> funcResultTypes;
       func->walk([&](Operation *op) {
@@ -780,9 +773,8 @@ public:
         GridAnalysisResult grid_analysis_result = grid_analysis.getResult();
 
         RankedTensorType tensor_type =
-            op->getResult(0).getType().template cast<RankedTensorType>();
-        LayoutAttr layout =
-            tensor_type.getEncoding().template cast<LayoutAttr>();
+            mlir::cast<RankedTensorType>(op->getResult(0).getType());
+        LayoutAttr layout = mlir::cast<LayoutAttr>(tensor_type.getEncoding());
         llvm::ArrayRef<int64_t> tensor_shape = tensor_type.getShape();
 
         // Update the output layout attribute with the new grid size.

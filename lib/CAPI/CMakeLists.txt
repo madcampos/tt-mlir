@@ -1,3 +1,8 @@
+set(MLIR_C_LIB "")
+if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Linux")
+  set(MLIR_C_LIB "MLIR-C")
+endif()
+
 add_mlir_public_c_api_library(TTMLIRCAPI
   Dialects.cpp
   TTKernelTypes.cpp
@@ -8,8 +13,7 @@ add_mlir_public_c_api_library(TTMLIRCAPI
   ENABLE_AGGREGATION
 
   LINK_LIBS PUBLIC
-  MLIRIR
-  MLIRSupport
+  ${MLIR_C_LIB}
   MLIRTTDialect
   MLIRTTIRDialect
   MLIRTTKernelDialect
