@@ -74,8 +74,8 @@ public:
       return op.getOp();
     }
     auto name = op.getOperation()->getName().getStringRef();
-    if (name.starts_with("ttmetal.")) {
-      return name.drop_front(8);
+    if (name.starts_with("ttkernel.")) {
+      return name.drop_front(9);
     }
     return name;
   }

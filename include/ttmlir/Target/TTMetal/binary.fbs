@@ -12,5 +12,5 @@ table TTMetalBinary {
 }
 
 root_type TTMetalBinary;
-file_identifier "TTB0";
-file_extension "ttb";
+file_identifier "TTM0";
+file_extension "ttm";
