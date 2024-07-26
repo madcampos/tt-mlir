@@ -1,30 +1,27 @@
-set(TT_RUNTIME_ENABLE_TTNN OFF)
-set(TT_RUNTIME_ENABLE_TTMETAL OFF)
+set(TT_RUNTIME_ENABLE_TTNN CACHE  BOOL OFF)
+set(TT_RUNTIME_ENABLE_TTMETAL CACHE BOOL OFF)
+
+if (TT_RUNTIME_ENABLE_TTNN AND TT_RUNTIME_ENABLE_TTMETAL)
+  message(FATAL_ERROR "Cannot enable both TTNN and TTMETAL runtimes")
+endif()
+
+if (NOT TT_RUNTIME_ENABLE_TTNN AND NOT TT_RUNTIME_ENABLE_TTMETAL)
+  # Default to TTNN
+  set(TT_RUNTIME_ENABLE_TTNN ON)
+endif()
+
+if (TT_RUNTIME_ENABLE_TTMETAL AND TTMLIR_ENABLE_RUNTIME_TESTS)
+  message(FATAL_ERROR "TTMETAL runtime does not support runtime tests yet")
+endif()
 
 if (TTMLIR_ENABLE_RUNTIME)
-  set(TT_RUNTIME_ENABLE_TTNN NOT TTMLIR_DISABLE_RUNTIME_TTNN)
-  set(TT_RUNTIME_ENABLE_TTMETAL OFF)
-
   if (TT_RUNTIME_ENABLE_TTNN)
-    add_library(TTRuntimeTTNN
-      STATIC
-      ttnn/runtime.cpp
-      ttnn/program.cpp
-    )
-    target_include_directories(TTRuntimeTTNN PUBLIC
-      ${PROJECT_SOURCE_DIR}/runtime/include
-      ${PROJECT_BINARY_DIR}/include/ttmlir/Target/Common
-    )
-    target_include_directories(TTRuntimeTTNN PUBLIC "$<BUILD_INTERFACE:${TTMETAL_INCLUDE_DIRS}>")
-    target_link_libraries(TTRuntimeTTNN PUBLIC TTNN_LIBRARY)
-    add_dependencies(TTRuntimeTTNN TTNN_LIBRARY tt-metal FBS_GENERATION)
+    add_subdirectory(ttnn)
   else()
     add_library(TTRuntimeTTNN INTERFACE)
   endif()
   if (TT_RUNTIME_ENABLE_TTMETAL)
-    add_library(TTRuntimeTTMetal STATIC ttmetal/runtime.cpp)
-    target_include_directories(TTRuntimeTTMetal PUBLIC ${PROJECT_SOURCE_DIR}/runtime/include ${PROJECT_BINARY_DIR}/include/ttmlir/Target/Common)
-    add_dependencies(TTRuntimeTTMetal tt-metal FBS_GENERATION)
+    add_subdirectory(ttmetal)
   else()
     add_library(TTRuntimeTTMetal INTERFACE)
   endif()
@@ -33,6 +30,7 @@ else()
   add_library(TTRuntimeTTMetal INTERFACE)
 endif()
 
+message(STATUS "TT_RUNTIME_ENABLE_TTNN: ${TT_RUNTIME_ENABLE_TTNN} ${TT_RUNTIME_ENABLE_TTMETAL}")
 add_library(TTRuntime STATIC binary.cpp runtime.cpp)
 if (TT_RUNTIME_ENABLE_TTNN)
   target_compile_definitions(TTRuntime PUBLIC TT_RUNTIME_ENABLE_TTNN)
