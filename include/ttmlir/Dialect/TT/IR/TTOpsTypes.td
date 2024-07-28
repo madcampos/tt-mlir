@@ -33,8 +33,8 @@ def TT_GridAttr : TT_Attr<"Grid", "grid"> {
   let parameters = (ins ArrayRefParameter<"int64_t">:$shape,
                         DefaultValuedParameter<
                           "AffineMap",
-                          "$_builder.getEmptyAffineMap()">:$physical_grid_mapping);
-  let assemblyFormat = "`<` custom<DimensionList>($shape) (`,` $physical_grid_mapping^)? `>`";
+                          "$_builder.getEmptyAffineMap()">:$mapping);
+  let assemblyFormat = "`<` custom<DimensionList>($shape) (`,` $mapping^)? `>`";
 
   let extraClassDeclaration = [{
       static GridAttr get(::mlir::MLIRContext *context) {
@@ -185,6 +185,12 @@ def TT_LayoutAttr : TT_Attr<"Layout", "layout"> {
                             GridAttr grid = {},
                             ArrayRef<std::pair<std::int64_t, std::int64_t>> collapseIntervals = {{0, -1}},
                             OOBVal oobVal = OOBVal::Undef);
+      LayoutAttr withGrid(::mlir::MLIRContext *context, ArrayRef<int64_t> tensorShape, GridAttr grid, ArrayRef<std::pair<std::int64_t, std::int64_t>> collapseIntervals = {{0, -1}});
+      LayoutAttr withGrid(::mlir::MLIRContext *context,
+                          RankedTensorType ty,
+                          GridAttr grid,
+                          ArrayRef<std::pair<std::int64_t, std::int64_t>> collapseIntervals = {{0, -1}});
+
       MemorySpace getMemorySpace() const;
       bool isSystemMemorySpace() const { return ::mlir::tt::isSystemMemorySpace(getMemorySpace()); }
       bool isDeviceMemorySpace() const { return ::mlir::tt::isDeviceMemorySpace(getMemorySpace()); }
@@ -192,12 +198,8 @@ def TT_LayoutAttr : TT_Attr<"Layout", "layout"> {
       llvm::SmallVector<int64_t> getStride(ArrayRef<int64_t> logicalShape) const;
       llvm::SmallVector<int64_t> getPhysicalShape(ArrayRef<int64_t> logicalShape) const;
       llvm::SmallVector<int64_t> getShardShape() const;
-      LayoutAttr withGrid(::mlir::MLIRContext *context, ArrayRef<int64_t> tensorShape, GridAttr grid, ArrayRef<std::pair<std::int64_t, std::int64_t>> collapseIntervals = {{0, -1}});
-      LayoutAttr withGrid(::mlir::MLIRContext *context,
-                          RankedTensorType ty,
-                          GridAttr grid,
-                          ArrayRef<std::pair<std::int64_t, std::int64_t>> collapseIntervals = {{0, -1}});
       LayoutAttr withElementType(::mlir::MLIRContext *context, Type elementType);
+      AffineMap projectOnto(ArrayRef<int64_t> logicalTensorShape, GridAttr grid) const;
   }];
 }
 

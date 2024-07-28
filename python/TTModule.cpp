@@ -67,7 +67,7 @@ void populateTTModule(py::module &m) {
                              [](tt::GridAttr const &ga) { return ga.name; })
       .def_property_readonly("shape", &tt::GridAttr::getShape)
       .def_property_readonly("physical_grid_mapping",
-                             &tt::GridAttr::getPhysicalGridMapping);
+                             &tt::GridAttr::getMapping);
 
   py::class_<MemRefType>(m, "MemRefType")
       .def_property_readonly("shape", &MemRefType::getShape)

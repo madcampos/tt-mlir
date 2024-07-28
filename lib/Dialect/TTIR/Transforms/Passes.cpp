@@ -571,10 +571,6 @@ inline uint64_t getMemrefSizeBytes(MemRefType ty) {
 }
 
 inline uint64_t getLayoutSizeBytes(LayoutAttr layout) {
-  auto gridShape = layout.getGrid().getShape();
-  auto gridVolume = std::accumulate(gridShape.begin(), gridShape.end(), 1,
-                                    std::multiplies<uint64_t>());
-  assert(gridVolume == 1 && "Only support grid shape of 1 for now");
   return getMemrefSizeBytes(layout.getMemref());
 }
 

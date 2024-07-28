@@ -55,7 +55,38 @@ public:
       rewriter.replaceOpWithNewOp<ttmetal::HostReadOp>(
           op, outputTy, op.getInput(), op.getOutput());
     } else {
-      return failure();
+      SmallVector<Attribute> threadTypes = {
+          rewriter.getAttr<ttkernel::ThreadTypeAttr>(
+              ttkernel::ThreadType::Noc0),
+      };
+      SmallVector<Attribute> coreRanges = {
+          rewriter.getAttr<ttmetal::CoreRangeAttr>(outputLayout.getGrid()),
+      };
+      SmallVector<Attribute> operand_cb_port_mapping;
+
+      auto metalDispatch = rewriter.create<ttmetal::DispatchOp>(
+          op.getLoc(), SmallVector<Type>({outputTy}),
+          SmallVector<Value>({op.getInput()}),
+          SmallVector<Value>({op.getOutput()}),
+          rewriter.getArrayAttr(coreRanges), rewriter.getArrayAttr(threadTypes),
+          rewriter.getArrayAttr(operand_cb_port_mapping), threadTypes.size());
+
+      Block *noc0Block = rewriter.createBlock(&metalDispatch.getRegion(0));
+
+      {
+        OpBuilder noc0Builder(noc0Block, noc0Block->begin());
+        noc0Builder.create<ttkernel::ReturnOp>(op.getLoc(), ValueRange());
+      }
+      tt::DeviceAttr device = op.getDevice();
+      assert(device);
+      AffineMap src =
+          inputLayout.projectOnto(inputTy.getShape(), device.getGrid());
+      AffineMap dst =
+          outputLayout.projectOnto(outputTy.getShape(), device.getGrid());
+      llvm::outs() << "asdf src " << src << "\n";
+      llvm::outs() << "asdf dst " << dst << "\n";
+
+      rewriter.replaceOp(op, metalDispatch);
     }
     return success();
   }
@@ -183,8 +214,8 @@ public:
           noc0Builder.getI32IntegerAttr(1));
       noc0Builder.create<ttkernel::CBReserveBackOp>(
           op.getLoc(), noc0Block->getArgument(0), one);
-      noc0Builder.create<ttkernel::CBPushBackOp>(op.getLoc(),
-          noc0Block->getArgument(0), one);
+      noc0Builder.create<ttkernel::CBPushBackOp>(
+          op.getLoc(), noc0Block->getArgument(0), one);
       noc0Builder.create<ttkernel::ReturnOp>(op.getLoc(), ValueRange());
     }
 

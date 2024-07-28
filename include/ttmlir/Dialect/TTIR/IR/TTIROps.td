@@ -60,7 +60,7 @@ def TTIR_GenericOp : TTIR_DPSOp<"generic", [AttrSizedOperandSegments]> {
     let regions = (region AnyRegion:$region);
 }
 
-def TTIR_LayoutOp : TTIR_Op<"layout", [DestinationStyleOpInterface]> {
+def TTIR_LayoutOp : TTIR_Op<"layout", [DestinationStyleOpInterface, TTIROpInterface]> {
     let summary = "Layout op.";
     let description = [{
       Layout operation, transition tensors from one layout to another.  Some examples include:
@@ -83,6 +83,11 @@ def TTIR_LayoutOp : TTIR_Op<"layout", [DestinationStyleOpInterface]> {
 
     let extraClassDeclaration = [{
       MutableOperandRange getDpsInitsMutable() { return getOutputMutable(); }
+      ArrayAttr getOperandConstraints() {
+        return nullptr;
+        // TODO return below, but we need a way to properly create an ArrayAttr:
+        // return {OperandConstraint::Any, OperandConstraint::Any};
+      }
     }];
 
     let hasVerifier = 1;
