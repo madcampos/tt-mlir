@@ -27,6 +27,49 @@
 #include "ttmlir/Dialect/TTMetal/IR/TTMetalOpsTypes.h"
 
 namespace mlir::tt::ttmetal {
+struct CoreCoord {
+  std::int64_t d = 0;
+  std::int64_t r = 0;
+  std::int64_t c = 0;
+
+  std::int64_t &operator[](std::size_t i) {
+    assert(i < 3);
+    return i == 0 ? d : i == 1 ? r : c;
+  }
+
+  std::int64_t operator[](std::size_t i) const {
+    assert(i < 3);
+    return i == 0 ? d : i == 1 ? r : c;
+  }
+
+  bool operator==(CoreCoord const &other) const {
+    return d == other.d && r == other.r && c == other.c;
+  }
+};
+} // namespace mlir::tt::ttmetal
+
+namespace llvm {
+template <> struct DenseMapInfo<mlir::tt::ttmetal::CoreCoord> {
+  static mlir::tt::ttmetal::CoreCoord getEmptyKey() {
+    return mlir::tt::ttmetal::CoreCoord{-1, -1, -1};
+  }
+
+  static mlir::tt::ttmetal::CoreCoord getTombstoneKey() {
+    return mlir::tt::ttmetal::CoreCoord{-2, -2, -2};
+  }
+
+  static unsigned getHashValue(mlir::tt::ttmetal::CoreCoord coord) {
+    return llvm::hash_combine(coord.d, coord.r, coord.c);
+  }
+
+  static bool isEqual(mlir::tt::ttmetal::CoreCoord lhs,
+                      mlir::tt::ttmetal::CoreCoord rhs) {
+    return lhs == rhs;
+  }
+};
+} // namespace llvm
+
+namespace mlir::tt::ttmetal {
 
 #define GEN_PASS_DEF_CONVERTTTIRTOTTMETAL
 #include "ttmlir/Dialect/TTMetal/Transforms/Passes.h.inc"
@@ -35,6 +78,88 @@ class TTIRToTTMetalLayoutRewriter : public OpRewritePattern<ttir::LayoutOp> {
 public:
   using OpRewritePattern<ttir::LayoutOp>::OpRewritePattern;
 
+  struct NocRead {
+    CoreCoord srcCoord;
+    std::int64_t srcOffset = 0;
+    std::int64_t dstOffset = 0;
+    std::int64_t size = 0;
+
+    bool isContiguous(CoreCoord nextCoord, std::int64_t nextSrcOffset,
+                      std::int64_t nextDstOffset) const {
+      return (nextCoord == srcCoord) && (nextSrcOffset == srcOffset + size) &&
+             (nextDstOffset == dstOffset + size);
+    }
+  };
+
+  mlir::DenseMap<CoreCoord, mlir::SmallVector<NocRead>>
+  calculateDataMovement(ArrayRef<std::int64_t> tensorShape,
+                        std::int64_t elemSize, AffineMap src,
+                        AffineMap dst) const {
+    // For now it's just a simple pull model, but eventually we want to leverage
+    // both NoCs and the both read and write
+    SmallVector<std::int64_t> strides;
+    int64_t stride = 1;
+    for (int i = tensorShape.size() - 1; i >= 0; --i) {
+      strides.push_back(stride);
+      stride *= tensorShape[i];
+    }
+
+    int64_t volume = stride;
+    mlir::SmallVector<mlir::AffineExpr, 8> exprs(tensorShape.size());
+    mlir::DenseMap<CoreCoord, mlir::SmallVector<NocRead>> dst2srcMap;
+    assert(3 == src.getNumResults() - 1);
+    assert(3 == dst.getNumResults() - 1);
+    for (int i = 0; i < volume; ++i) {
+      for (unsigned j = 0; j < tensorShape.size(); ++j) {
+        exprs[j] = getAffineConstantExpr((i / strides[j]) % tensorShape[j],
+                                         src.getContext());
+      }
+
+      CoreCoord srcCoord;
+      CoreCoord dstCoord;
+      for (unsigned j = 0; j < src.getNumResults() - 1; ++j) {
+        mlir::AffineExpr srcCoordExpr = src.getResult(j).replaceDims(exprs);
+        srcCoord[j] =
+            llvm::cast<mlir::AffineConstantExpr>(srcCoordExpr).getValue();
+        assert(j != 0 || srcCoord[j] == 0);
+        mlir::AffineExpr dstCoordExpr = dst.getResult(j).replaceDims(exprs);
+        dstCoord[j] =
+            llvm::cast<mlir::AffineConstantExpr>(dstCoordExpr).getValue();
+        assert(j != 0 || dstCoord[j] == 0);
+      }
+
+      mlir::AffineExpr srcIndexExpr =
+          src.getResult(src.getNumResults() - 1).replaceDims(exprs);
+      std::int64_t srcIndex =
+          llvm::cast<mlir::AffineConstantExpr>(srcIndexExpr).getValue();
+      mlir::AffineExpr dstIndexExpr =
+          dst.getResult(dst.getNumResults() - 1).replaceDims(exprs);
+      std::int64_t dstIndex =
+          llvm::cast<mlir::AffineConstantExpr>(dstIndexExpr).getValue();
+      std::int64_t srcOffset = srcIndex * elemSize;
+      std::int64_t dstOffset = dstIndex * elemSize;
+      mlir::SmallVector<NocRead> &srcs = dst2srcMap[dstCoord];
+      if (srcs.empty() ||
+          not srcs.back().isContiguous(srcCoord, srcOffset, dstOffset)) {
+        if (not srcs.empty()) {
+          llvm::outs() << "asdfasdfasdf\n";
+          llvm::outs() << "srcCoord: " << srcs.back().srcCoord.d << " "
+                       << srcs.back().srcCoord.r << " "
+                       << srcs.back().srcCoord.c << "\n";
+          llvm::outs() << "dstoffset: " << srcs.back().dstOffset << " "
+                       << dstOffset << "\n";
+          llvm::outs() << "srcOffset: " << srcs.back().srcOffset << " "
+                       << srcOffset << "\n";
+        }
+        srcs.push_back(NocRead{srcCoord, srcOffset, dstOffset, elemSize});
+      } else {
+        srcs.back().size += elemSize;
+      }
+    }
+
+    return dst2srcMap;
+  }
+
   LogicalResult matchAndRewrite(ttir::LayoutOp op,
                                 PatternRewriter &rewriter) const final {
     auto inputTy = op.getInput().getType().template cast<RankedTensorType>();
@@ -42,6 +167,7 @@ public:
     if (not inputTy.getEncoding() || not outputTy.getEncoding()) {
       return failure();
     }
+    assert(inputTy.getShape() == outputTy.getShape());
     assert(inputTy.getEncoding().isa<tt::LayoutAttr>());
     assert(outputTy.getEncoding().isa<tt::LayoutAttr>());
     auto inputLayout = inputTy.getEncoding().template cast<tt::LayoutAttr>();
@@ -78,13 +204,34 @@ public:
         noc0Builder.create<ttkernel::ReturnOp>(op.getLoc(), ValueRange());
       }
       tt::DeviceAttr device = op.getDevice();
+      assert(inputLayout.getPhysicalShape(inputTy.getShape()) ==
+                 outputLayout.getPhysicalShape(outputTy.getShape()) &&
+             "Physical shapes must match for now");
       assert(device);
       AffineMap src =
           inputLayout.projectOnto(inputTy.getShape(), device.getGrid());
       AffineMap dst =
           outputLayout.projectOnto(outputTy.getShape(), device.getGrid());
-      llvm::outs() << "asdf src " << src << "\n";
-      llvm::outs() << "asdf dst " << dst << "\n";
+
+      auto dm = calculateDataMovement(
+          inputTy.getShape(), inputTy.getElementTypeBitWidth() / 8, src, dst);
+
+      for (auto [dstCoord, srcs] : dm) {
+        for (auto s : srcs) {
+          auto srcCoord = s.srcCoord;
+          auto srcOffset = s.srcOffset;
+          auto dstOffset = s.dstOffset;
+          auto size = srcs[0].size;
+          llvm::outs() << "asdf\n";
+          llvm::outs() << "srcCoord: " << srcCoord.d << " " << srcCoord.r << " "
+            << srcCoord.c << "\n";
+          llvm::outs() << "dstCoord: " << dstCoord.d << " " << dstCoord.r << " "
+            << dstCoord.c << "\n";
+          llvm::outs() << "srcOffset: " << srcOffset << "\n";
+          llvm::outs() << "dstOffset: " << dstOffset << "\n";
+          llvm::outs() << "size: " << size << "\n";
+        }
+      }
 
       rewriter.replaceOp(op, metalDispatch);
     }
