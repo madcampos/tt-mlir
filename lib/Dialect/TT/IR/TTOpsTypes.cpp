@@ -54,13 +54,14 @@ static mlir::MemRefType buildMemRef(::mlir::MLIRContext *context,
                                     ::llvm::ArrayRef<int64_t> shardShape,
                                     ::mlir::Type elementType,
                                     MemorySpace memorySpace) {
+  ::llvm::SmallVector<int64_t> scalarShardShape(shardShape);
   if (elementType.isa<TileType>()) {
-    shardShape = elementType.cast<TileType>().getTiledShape(
-        ::llvm::SmallVector<int64_t>(shardShape));
+    scalarShardShape =
+        elementType.cast<TileType>().getTiledShape(scalarShardShape);
   }
   return mlir::MemRefType::get(
-      shardShape, elementType,
-      mlir::AffineMap::getMultiDimIdentityMap(shardShape.size(), context),
+      scalarShardShape, elementType,
+      mlir::AffineMap::getMultiDimIdentityMap(scalarShardShape.size(), context),
       MemorySpaceAttr::get(context, memorySpace));
 }
 

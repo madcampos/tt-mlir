@@ -23,9 +23,12 @@ struct CQExecutor {
 
   CQExecutor(
       ::tt::tt_metal::Device *device, std::size_t cq_id,
-      ::tt::target::metal::CommandQueue const *commandQueue,
-      std::vector<std::shared_ptr<::tt::tt_metal::Buffer>> const &inputs,
-      std::vector<std::shared_ptr<::tt::tt_metal::Buffer>> const &outputs);
+      std::vector<std::pair<std::uint32_t,
+                            std::shared_ptr<::tt::tt_metal::Buffer>>> const
+          &inputs,
+      std::vector<std::pair<std::uint32_t,
+                            std::shared_ptr<::tt::tt_metal::Buffer>>> const
+          &outputs);
 
   std::shared_ptr<::tt::tt_metal::Event>
   execute(::tt::target::metal::CommandQueue const *commandQueue);
@@ -45,18 +48,19 @@ struct CQExecutor {
 
 CQExecutor::CQExecutor(
     ::tt::tt_metal::Device *device, std::size_t cq_id,
-    ::tt::target::metal::CommandQueue const *commandQueue,
-    std::vector<std::shared_ptr<::tt::tt_metal::Buffer>> const &inputs,
-    std::vector<std::shared_ptr<::tt::tt_metal::Buffer>> const &outputs)
+    std::vector<
+        std::pair<std::uint32_t, std::shared_ptr<::tt::tt_metal::Buffer>>> const
+        &inputs,
+    std::vector<
+        std::pair<std::uint32_t, std::shared_ptr<::tt::tt_metal::Buffer>>> const
+        &outputs)
     : device(device) {
-  assert(inputs.size() == commandQueue->inputs()->size());
-  assert(outputs.size() == commandQueue->outputs()->size());
   for (std::size_t i = 0; i < inputs.size(); ++i) {
-    buffers[commandQueue->inputs()->Get(i)->global_id()] = inputs[i];
+    buffers[inputs[i].first] = inputs[i].second;
   }
 
   for (std::size_t i = 0; i < outputs.size(); ++i) {
-    buffers[commandQueue->outputs()->Get(i)->global_id()] = outputs[i];
+    buffers[outputs[i].first] = outputs[i].second;
   }
 
   cq = &device->command_queue(cq_id);
@@ -300,9 +304,13 @@ void CQExecutor::execute(::tt::target::metal::FinishCommand const *) {
 std::shared_ptr<::tt::tt_metal::Event> executeCommandQueue(
     ::tt::tt_metal::Device *device,
     ::tt::target::metal::CommandQueue const *commandQueue, std::size_t cq_id,
-    std::vector<std::shared_ptr<::tt::tt_metal::Buffer>> const &inputs,
-    std::vector<std::shared_ptr<::tt::tt_metal::Buffer>> const &outputs) {
-  CQExecutor executor(device, cq_id, commandQueue, inputs, outputs);
+    std::vector<
+        std::pair<std::uint32_t, std::shared_ptr<::tt::tt_metal::Buffer>>> const
+        &inputs,
+    std::vector<
+        std::pair<std::uint32_t, std::shared_ptr<::tt::tt_metal::Buffer>>> const
+        &outputs) {
+  CQExecutor executor(device, cq_id, inputs, outputs);
   return executor.execute(commandQueue);
 }
 }

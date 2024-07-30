@@ -133,7 +133,6 @@ def run(args):
 
     fbb = ttrt.binary.load_binary_from_path(args.binary)
     check_version(fbb.version)
-    assert fbb.file_identifier == "TTNN", "Only TTNN binaries are supported"
     d = ttrt.binary.as_dict(fbb)
     assert args.program_index < len(d["programs"]), "args.program_index out of range"
     program = d["programs"][args.program_index]

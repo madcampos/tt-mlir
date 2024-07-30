@@ -31,6 +31,7 @@
 #pragma clang diagnostic ignored "-Wunused-local-typedef"
 #pragma clang diagnostic ignored "-Wunused-function"
 #pragma clang diagnostic ignored "-Wpessimizing-move"
+#pragma clang diagnostic ignored "-Wparentheses"
 #define FMT_HEADER_ONLY
 #include "tt_metal/host_api.hpp"
 #pragma clang diagnostic pop
@@ -66,8 +67,12 @@ void wait(Event event);
 std::shared_ptr<::tt::tt_metal::Event> executeCommandQueue(
     ::tt::tt_metal::Device *device, ::tt::target::metal::CommandQueue const *cq,
     std::size_t cq_id,
-    std::vector<std::shared_ptr<::tt::tt_metal::Buffer>> const &inputs,
-    std::vector<std::shared_ptr<::tt::tt_metal::Buffer>> const &outputs);
+    std::vector<
+        std::pair<std::uint32_t, std::shared_ptr<::tt::tt_metal::Buffer>>> const
+        &inputs,
+    std::vector<
+        std::pair<std::uint32_t, std::shared_ptr<::tt::tt_metal::Buffer>>> const
+        &outputs);
 
 } // namespace tt::runtime::ttmetal
 

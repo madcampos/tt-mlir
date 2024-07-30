@@ -70,7 +70,5 @@ table Command {
 
 table CommandQueue {
   name: string;
-  inputs: [TensorRef];
-  outputs: [TensorRef];
   commands: [Command];
 }

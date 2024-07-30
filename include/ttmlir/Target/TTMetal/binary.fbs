@@ -9,6 +9,9 @@ table DeviceProgram {
 }
 
 table Program {
+  name: string;
+  inputs: [TensorRef];
+  outputs: [TensorRef];
   device_programs: [DeviceProgram];
 }
 

@@ -216,9 +216,8 @@ public:
 
     std::vector<::flatbuffers::Offset<::tt::target::metal::CommandQueue>>
         commandQueues = {
-            ::tt::target::metal::CreateCommandQueueDirect(
-                fbb, cqBuilder.name, &cqBuilder.inputs, &cqBuilder.outputs,
-                &cqBuilder.commands),
+            ::tt::target::metal::CreateCommandQueueDirect(fbb, cqBuilder.name,
+                                                          &cqBuilder.commands),
         };
 
     std::vector<::flatbuffers::Offset<::tt::target::metal::DeviceProgram>> devicePrograms =
@@ -228,7 +227,9 @@ public:
 
     std::vector<::flatbuffers::Offset<::tt::target::metal::Program>> programs =
         {
-            ::tt::target::metal::CreateProgramDirect(fbb, &devicePrograms),
+            ::tt::target::metal::CreateProgramDirect(
+                fbb, cqBuilder.name, &cqBuilder.inputs, &cqBuilder.outputs,
+                &devicePrograms),
         };
 
     auto binary = ::tt::target::metal::CreateTTMetalBinaryDirect(

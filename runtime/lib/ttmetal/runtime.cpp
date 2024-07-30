@@ -128,24 +128,33 @@ Event submit(Device deviceHandle, Binary executableHandle,
              std::vector<Tensor> const &inputHandles,
              std::vector<Tensor> const &outputHandles) {
   ::tt::target::metal::TTMetalBinary const &fbb = *getBinary(executableHandle);
-  std::vector<std::shared_ptr<::tt::tt_metal::Buffer>> inputs;
+  ::tt::target::metal::Program const *program =
+      fbb.programs()->Get(programIndex);
+  std::vector<std::pair<std::uint32_t, std::shared_ptr<::tt::tt_metal::Buffer>>>
+      inputs;
   inputs.reserve(inputHandles.size());
-  for (auto &input : inputHandles) {
-    inputs.push_back(static_pointer_cast<::tt::tt_metal::Buffer>(input.handle));
+  assert(inputHandles.size() == program->inputs()->size() &&
+         "Input size mismatch");
+  for (unsigned i = 0; i < inputHandles.size(); ++i) {
+    inputs.emplace_back(
+        program->inputs()->Get(i)->global_id(),
+        static_pointer_cast<::tt::tt_metal::Buffer>(inputHandles[i].handle));
   }
 
-  std::vector<std::shared_ptr<::tt::tt_metal::Buffer>> outputs;
+  std::vector<std::pair<std::uint32_t, std::shared_ptr<::tt::tt_metal::Buffer>>>
+      outputs;
   outputs.reserve(outputHandles.size());
-  for (auto &output : outputHandles) {
-    outputs.push_back(
-        static_pointer_cast<::tt::tt_metal::Buffer>(output.handle));
+  assert(outputHandles.size() == program->outputs()->size() &&
+         "Output size mismatch");
+  for (unsigned i = 0; i < outputHandles.size(); ++i) {
+    outputs.emplace_back(
+        program->outputs()->Get(i)->global_id(),
+        static_pointer_cast<::tt::tt_metal::Buffer>(outputHandles[i].handle));
   }
 
   DeviceMesh &deviceMesh = deviceHandle.as<DeviceMesh>();
   std::shared_ptr<Events> events = std::make_shared<Events>();
   std::size_t cq_id = 0;
-  ::tt::target::metal::Program const *program =
-      fbb.programs()->Get(programIndex);
   assert(program->device_programs()->size() == deviceMesh.size() &&
          "Device programs size mismatch");
   for (std::size_t i = 0; i < program->device_programs()->size(); ++i) {
