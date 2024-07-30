@@ -148,8 +148,6 @@ public:
           ::tt::target::Dim2dRange core_range =
               toFlatbuffer(dispatchOp.getCoreRanges()[region.getRegionNumber()]
                                .cast<CoreRangeAttr>());
-          ::tt::target::Dim2dRange(::tt::target::Dim2d(0, 0),
-                                   ::tt::target::Dim2d(0, 0));
           std::vector<::flatbuffers::Offset<::tt::target::CBRef>> cbs;
           kernels.push_back(::tt::target::metal::CreateKernelDescDirect(
               fbb, ::tt::target::metal::Kernel::KernelSource,

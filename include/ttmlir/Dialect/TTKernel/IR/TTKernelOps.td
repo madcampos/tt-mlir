@@ -172,6 +172,52 @@ def TTKernel_CBWaitFrontOp : TTKernel_Op<"cb_wait_front"> {
 }
 
 //===----------------------------------------------------------------------===//
+// TTKernel NOC operations
+//===----------------------------------------------------------------------===//
+
+def TTKernel_NocAddrOp : TTKernel_Op<"noc_addr"> {
+    let summary = "NocAddr";
+    let description = [{
+      NocAddr
+    }];
+
+    let arguments = (ins I16:$y, I16:$x, I32:$l1Address);
+    let results = (outs TTKernel_NocAddr:$nocAddr);
+}
+
+def TTKernel_NocAsyncReadOp : TTKernel_Op<"noc_async_read"> {
+    let summary = "NocAsyncRead";
+    let description = [{
+      NocAsyncRead
+    }];
+
+    let arguments = (ins TTKernel_NocAddr:$srcNocAddr, I32:$dstLocalL1Addr, I32:$size);
+}
+
+def TTKernel_NocAsyncReadBarrierOp : TTKernel_Op<"noc_async_read_barrier"> {
+    let summary = "NocAsyncReadBarrier";
+    let description = [{
+      NocAsyncReadBarrier
+    }];
+}
+
+def TTKernel_NocAsyncWriteOp : TTKernel_Op<"noc_async_write"> {
+    let summary = "NocAsyncWrite";
+    let description = [{
+      NocAsyncWrite
+    }];
+
+    let arguments = (ins I32:$srcLocalL1Addr, TTKernel_NocAddr:$dstNocAddr, I32:$size);
+}
+
+def TTKernel_NocAsyncWriteBarrierOp : TTKernel_Op<"noc_async_write_barrier"> {
+    let summary = "NocAsyncWriteBarrier";
+    let description = [{
+      NocAsyncWriteBarrier
+    }];
+}
+
+//===----------------------------------------------------------------------===//
 // TTKernel Misc operations
 //===----------------------------------------------------------------------===//
 

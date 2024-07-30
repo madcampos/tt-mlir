@@ -6,16 +6,12 @@
 
 #include "mlir/Analysis/Liveness.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/Bufferization/Transforms/Bufferize.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/Dialect/MLProgram/IR/MLProgram.h"
-#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Rewrite/FrozenRewritePatternSet.h"
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
-#include "ttmlir/Dialect/TT/IR/TT.h"
 #include "ttmlir/Dialect/TT/IR/TTOpsTypes.h"
 #include "ttmlir/Dialect/TTIR/IR/TTIR.h"
 #include "ttmlir/Dialect/TTIR/IR/TTIROps.h"
@@ -29,21 +25,21 @@
 namespace mlir::tt::ttmetal {
 struct CoreCoord {
   std::int64_t d = 0;
-  std::int64_t r = 0;
-  std::int64_t c = 0;
+  std::int64_t y = 0;
+  std::int64_t x = 0;
 
   std::int64_t &operator[](std::size_t i) {
     assert(i < 3);
-    return i == 0 ? d : i == 1 ? r : c;
+    return i == 0 ? d : i == 1 ? y : x;
   }
 
   std::int64_t operator[](std::size_t i) const {
     assert(i < 3);
-    return i == 0 ? d : i == 1 ? r : c;
+    return i == 0 ? d : i == 1 ? y : x;
   }
 
   bool operator==(CoreCoord const &other) const {
-    return d == other.d && r == other.r && c == other.c;
+    return d == other.d && y == other.y && x == other.x;
   }
 };
 } // namespace mlir::tt::ttmetal
@@ -59,7 +55,7 @@ template <> struct DenseMapInfo<mlir::tt::ttmetal::CoreCoord> {
   }
 
   static unsigned getHashValue(mlir::tt::ttmetal::CoreCoord coord) {
-    return llvm::hash_combine(coord.d, coord.r, coord.c);
+    return llvm::hash_combine(coord.d, coord.y, coord.x);
   }
 
   static bool isEqual(mlir::tt::ttmetal::CoreCoord lhs,
@@ -97,10 +93,10 @@ public:
                         AffineMap dst) const {
     // For now it's just a simple pull model, but eventually we want to leverage
     // both NoCs and the both read and write
-    SmallVector<std::int64_t> strides;
+    SmallVector<std::int64_t> strides(tensorShape.size());
     int64_t stride = 1;
     for (int i = tensorShape.size() - 1; i >= 0; --i) {
-      strides.push_back(stride);
+      strides[i] = stride;
       stride *= tensorShape[i];
     }
 
@@ -141,16 +137,6 @@ public:
       mlir::SmallVector<NocRead> &srcs = dst2srcMap[dstCoord];
       if (srcs.empty() ||
           not srcs.back().isContiguous(srcCoord, srcOffset, dstOffset)) {
-        if (not srcs.empty()) {
-          llvm::outs() << "asdfasdfasdf\n";
-          llvm::outs() << "srcCoord: " << srcs.back().srcCoord.d << " "
-                       << srcs.back().srcCoord.r << " "
-                       << srcs.back().srcCoord.c << "\n";
-          llvm::outs() << "dstoffset: " << srcs.back().dstOffset << " "
-                       << dstOffset << "\n";
-          llvm::outs() << "srcOffset: " << srcs.back().srcOffset << " "
-                       << srcOffset << "\n";
-        }
         srcs.push_back(NocRead{srcCoord, srcOffset, dstOffset, elemSize});
       } else {
         srcs.back().size += elemSize;
@@ -181,28 +167,6 @@ public:
       rewriter.replaceOpWithNewOp<ttmetal::HostReadOp>(
           op, outputTy, op.getInput(), op.getOutput());
     } else {
-      SmallVector<Attribute> threadTypes = {
-          rewriter.getAttr<ttkernel::ThreadTypeAttr>(
-              ttkernel::ThreadType::Noc0),
-      };
-      SmallVector<Attribute> coreRanges = {
-          rewriter.getAttr<ttmetal::CoreRangeAttr>(outputLayout.getGrid()),
-      };
-      SmallVector<Attribute> operand_cb_port_mapping;
-
-      auto metalDispatch = rewriter.create<ttmetal::DispatchOp>(
-          op.getLoc(), SmallVector<Type>({outputTy}),
-          SmallVector<Value>({op.getInput()}),
-          SmallVector<Value>({op.getOutput()}),
-          rewriter.getArrayAttr(coreRanges), rewriter.getArrayAttr(threadTypes),
-          rewriter.getArrayAttr(operand_cb_port_mapping), threadTypes.size());
-
-      Block *noc0Block = rewriter.createBlock(&metalDispatch.getRegion(0));
-
-      {
-        OpBuilder noc0Builder(noc0Block, noc0Block->begin());
-        noc0Builder.create<ttkernel::ReturnOp>(op.getLoc(), ValueRange());
-      }
       tt::DeviceAttr device = op.getDevice();
       assert(inputLayout.getPhysicalShape(inputTy.getShape()) ==
                  outputLayout.getPhysicalShape(outputTy.getShape()) &&
@@ -212,25 +176,56 @@ public:
           inputLayout.projectOnto(inputTy.getShape(), device.getGrid());
       AffineMap dst =
           outputLayout.projectOnto(outputTy.getShape(), device.getGrid());
-
       auto dm = calculateDataMovement(
           inputTy.getShape(), inputTy.getElementTypeBitWidth() / 8, src, dst);
 
+      auto noc0Attr = rewriter.getAttr<ttkernel::ThreadTypeAttr>(
+          ttkernel::ThreadType::Noc0);
+      SmallVector<Attribute> threadTypes(dm.size(), noc0Attr);
+      SmallVector<Attribute> operand_cb_port_mapping;
+      SmallVector<Attribute> coreRanges;
+      coreRanges.reserve(dm.size());
       for (auto [dstCoord, srcs] : dm) {
+        SmallVector<int64_t> offset = {dstCoord.y, dstCoord.x};
+        SmallVector<int64_t> size = {1, 1};
+        coreRanges.push_back(
+            rewriter.getAttr<ttmetal::CoreRangeAttr>(offset, size));
+      };
+
+      auto metalDispatch = rewriter.create<ttmetal::DispatchOp>(
+          op.getLoc(), SmallVector<Type>({outputTy}),
+          SmallVector<Value>({op.getInput()}),
+          SmallVector<Value>({op.getOutput()}),
+          rewriter.getArrayAttr(coreRanges), rewriter.getArrayAttr(threadTypes),
+          rewriter.getArrayAttr(operand_cb_port_mapping), threadTypes.size());
+
+      int i = 0;
+      for (auto [dstCoord, srcs] : dm) {
+        Block *nocBlock = rewriter.createBlock(&metalDispatch.getRegion(i++));
+        OpBuilder nocBuilder(nocBlock, nocBlock->begin());
         for (auto s : srcs) {
-          auto srcCoord = s.srcCoord;
-          auto srcOffset = s.srcOffset;
-          auto dstOffset = s.dstOffset;
-          auto size = srcs[0].size;
-          llvm::outs() << "asdf\n";
-          llvm::outs() << "srcCoord: " << srcCoord.d << " " << srcCoord.r << " "
-            << srcCoord.c << "\n";
-          llvm::outs() << "dstCoord: " << dstCoord.d << " " << dstCoord.r << " "
-            << dstCoord.c << "\n";
-          llvm::outs() << "srcOffset: " << srcOffset << "\n";
-          llvm::outs() << "dstOffset: " << dstOffset << "\n";
-          llvm::outs() << "size: " << size << "\n";
+          auto y = nocBuilder.create<arith::ConstantOp>(
+              op.getLoc(), nocBuilder.getI16Type(),
+              nocBuilder.getI16IntegerAttr(s.srcCoord.y));
+          auto x = nocBuilder.create<arith::ConstantOp>(
+              op.getLoc(), nocBuilder.getI16Type(),
+              nocBuilder.getI16IntegerAttr(s.srcCoord.x));
+          auto srcOffset = nocBuilder.create<arith::ConstantOp>(
+              op.getLoc(), nocBuilder.getI32Type(),
+              nocBuilder.getI32IntegerAttr(s.srcOffset));
+          auto srcRemoteNocAddr = nocBuilder.create<ttkernel::NocAddrOp>(
+              op.getLoc(), y, x, srcOffset);
+          auto dstLocalL1Addr = nocBuilder.create<arith::ConstantOp>(
+              op.getLoc(), nocBuilder.getI32Type(),
+              nocBuilder.getI32IntegerAttr(s.dstOffset));
+          auto size = nocBuilder.create<arith::ConstantOp>(
+              op.getLoc(), nocBuilder.getI32Type(),
+              nocBuilder.getI32IntegerAttr(s.size));
+          nocBuilder.create<ttkernel::NocAsyncReadOp>(
+              op.getLoc(), srcRemoteNocAddr, dstLocalL1Addr, size);
         }
+        nocBuilder.create<ttkernel::NocAsyncReadBarrierOp>(op.getLoc());
+        nocBuilder.create<ttkernel::ReturnOp>(op.getLoc(), ValueRange());
       }
 
       rewriter.replaceOp(op, metalDispatch);

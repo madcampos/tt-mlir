@@ -10,6 +10,7 @@
 #include "mlir/Rewrite/FrozenRewritePatternSet.h"
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Target/Cpp/CppEmitter.h"
+#include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "ttmlir/Dialect/TT/IR/TT.h"
 #include "ttmlir/Dialect/TT/IR/TTOpsTypes.h"
@@ -21,6 +22,16 @@
 #include "ttmlir/Dialect/TTMetal/Transforms/Passes.h"
 
 namespace mlir::tt::ttmetal {
+
+class TTKernelToEmitCTypeConverter : public TypeConverter {
+public:
+  TTKernelToEmitCTypeConverter(MLIRContext *ctx) {
+    addConversion([](Type type) { return type; });
+    addConversion([ctx](mlir::tt::ttkernel::NocAddrType type) -> Type {
+      return Builder(ctx).getI64Type();
+    });
+  }
+};
 
 class TTMetalToEmitCFuncArgsRewriter : public OpRewritePattern<func::FuncOp> {
 public:
@@ -67,7 +78,9 @@ public:
 template <typename OpTy>
 class TTMetalToEmitCOpaqueRewriter : public OpRewritePattern<OpTy> {
 public:
-  using OpRewritePattern<OpTy>::OpRewritePattern;
+  TTMetalToEmitCOpaqueRewriter(TTKernelToEmitCTypeConverter &typeConverter,
+                               MLIRContext *ctx)
+      : OpRewritePattern<OpTy>(ctx), typeConverter(&typeConverter) {}
 
   StringRef getOpName(OpTy op) const {
     if constexpr (std::is_same_v<OpTy, ttkernel::BuiltinOp>) {
@@ -82,10 +95,16 @@ public:
 
   LogicalResult matchAndRewrite(OpTy op,
                                 PatternRewriter &rewriter) const final {
+    SmallVector<Type, 4> resultTypes;
+    for (auto type : op->getResultTypes()) {
+      resultTypes.push_back(typeConverter->convertType(type));
+    }
     rewriter.replaceOpWithNewOp<emitc::CallOpaqueOp>(
-        op, TypeRange(), getOpName(op), nullptr, nullptr, op->getOperands());
+        op, resultTypes, getOpName(op), nullptr, nullptr, op->getOperands());
     return success();
   }
+
+  TTKernelToEmitCTypeConverter *typeConverter;
 };
 
 LogicalResult emitDispatchOpRegionAsCpp(DispatchOp origOp,
@@ -120,14 +139,21 @@ LogicalResult emitDispatchOpRegionAsCpp(DispatchOp origOp,
   IRMapping irMapper;
   funcBody->takeBody(region);
 
+  TTKernelToEmitCTypeConverter typeConverter(module.getContext());
   RewritePatternSet patterns(module.getContext());
-  patterns.add<TTMetalToEmitCFuncArgsRewriter,
-               TTMetalToEmitCOpaqueRewriter<ttkernel::BuiltinOp>,
+  patterns.add<TTMetalToEmitCFuncArgsRewriter, TTMetalToEmitCReturnRewriter>(
+      module.getContext());
+  patterns.add<TTMetalToEmitCOpaqueRewriter<ttkernel::BuiltinOp>,
                TTMetalToEmitCOpaqueRewriter<ttkernel::CBPushBackOp>,
                TTMetalToEmitCOpaqueRewriter<ttkernel::CBPopFrontOp>,
                TTMetalToEmitCOpaqueRewriter<ttkernel::CBReserveBackOp>,
                TTMetalToEmitCOpaqueRewriter<ttkernel::CBWaitFrontOp>,
-               TTMetalToEmitCReturnRewriter>(module.getContext());
+               TTMetalToEmitCOpaqueRewriter<ttkernel::NocAddrOp>,
+               TTMetalToEmitCOpaqueRewriter<ttkernel::NocAsyncReadOp>,
+               TTMetalToEmitCOpaqueRewriter<ttkernel::NocAsyncReadBarrierOp>,
+               TTMetalToEmitCOpaqueRewriter<ttkernel::NocAsyncWriteOp>,
+               TTMetalToEmitCOpaqueRewriter<ttkernel::NocAsyncWriteBarrierOp>>(
+      typeConverter, module.getContext());
 
   FrozenRewritePatternSet patternSet(std::move(patterns));
   if (failed(applyPatternsAndFoldGreedily(module, patternSet))) {
@@ -136,6 +162,14 @@ LogicalResult emitDispatchOpRegionAsCpp(DispatchOp origOp,
 
   if (emitc::translateToCpp(module.getOperation(), os).failed()) {
     return failure();
+  }
+
+  {
+    std::string source;
+    llvm::raw_string_ostream os(source);
+    (void)emitc::translateToCpp(module.getOperation(), os);
+    llvm::outs() << "asdf:\n" << source << "\n";
+    fflush(stdout);
   }
 
   return success();
